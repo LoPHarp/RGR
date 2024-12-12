@@ -1,7 +1,6 @@
 from model import Model
 from view import View
 
-
 class Controller:
     def __init__(self):
         self.model = Model()
@@ -76,11 +75,8 @@ class Controller:
                 self.model.drop_all_tables()
                 break
             elif choice_table == '7':
-                self.show_inventory_count_by_warehouse()
-            elif choice_table == '8':
-                self.show_products_with_quantity()
-            elif choice_table == '9':
-                self.show_warehouse_with_most_inventories()
+                self.search_all_entities()
+
 
     def select_table(self):
         self.view.show_message("\nSelect a table or other function:")
@@ -90,9 +86,7 @@ class Controller:
         self.view.show_message("4. Warehouse_Products")
         self.view.show_message("5. Quit")
         self.view.show_message("6. Сlear all tables")
-        self.view.show_message("7. Inventory Count by Warehouse")
-        self.view.show_message("8. Products with Quantity")
-        self.view.show_message("9. Warehouse with Most Inventories")
+        self.view.show_message("7. Search Across All Entities")
         return input("Enter your choice: ")
 
     def show_menu(self):
@@ -193,23 +187,39 @@ class Controller:
         else:
             self.view.show_message("generate_random_strings error")
 
-    # Скільки інвентаризацій було проведено на кожному складі
-    def show_inventory_count_by_warehouse(self):
-        result_filter = input("Enter Result filter (e.g., True, False, Planned): ")
-        data, exec_time = self.model.get_inventory_count_by_warehouse(result_filter)
-        self.view.show_search_results(data, f"Inventory Count by Warehouse (Filter: {result_filter})")
-        self.view.show_message(f"Query executed in {exec_time:.2f} ms.")
+    def search_all_entities(self):
+        self.view.show_message("Enter search criteria (leave blank to skip):")
+        where_filter = input("Warehouse 'Where': ") or None
+        inventory_id_filter = input("Inventory ID: ") or None
+        user_id_filter = input("User ID: ") or None
+        result_filter = input("Result (e.g., True, False, Planned): ") or None
+        warehouse_id_filter = input("Warehouse ID: ") or None
+        product_id_filter = input("Product ID: ") or None
+        product_name_filter = input("Product Name (partial match): ") or None
+        min_quantity = input("Min Quantity: ") or None
+        max_quantity = input("Max Quantity: ") or None
 
-    # Які продукти мають кількість більше заданого значення і прив'язані до складів
-    def show_products_with_quantity(self):
-        min_quantity = int(input("Enter minimum quantity: "))
-        data, exec_time = self.model.get_products_with_quantity(min_quantity)
-        self.view.show_search_results(data, f"Products with Quantity > {min_quantity}")
-        self.view.show_message(f"Query executed in {exec_time:.2f} ms.")
+        for field_name, value in [
+            ("Inventory ID", inventory_id_filter),
+            ("User ID", user_id_filter),
+            ("Warehouse ID", warehouse_id_filter),
+            ("Product ID", product_id_filter),
+            ("Min Quantity", min_quantity),
+            ("Max Quantity", max_quantity),
+        ]:
+            if value is not None and not value.isdigit():
+                self.view.show_message(f"Error: {field_name} must be a number!")
+                return
 
-    # Склад із найбільшою кількістю інвентаризацій
-    def show_warehouse_with_most_inventories(self):
-        data, exec_time = self.model.get_warehouse_with_most_inventories()
-        self.view.show_search_results([data], "Warehouse with Most Inventories")
-        self.view.show_message(f"Query executed in {exec_time:.2f} ms.")
-
+        data = self.model.search_all_entities(
+            where_filter,
+            int(inventory_id_filter) if inventory_id_filter else None,
+            int(user_id_filter) if user_id_filter else None,
+            result_filter,
+            int(warehouse_id_filter) if warehouse_id_filter else None,
+            int(product_id_filter) if product_id_filter else None,
+            product_name_filter,
+            int(min_quantity) if min_quantity else None,
+            int(max_quantity) if max_quantity else None,
+        )
+        self.view.show_search_results(data, "Search Results")

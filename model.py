@@ -160,20 +160,44 @@ class Model:
         self.conn.commit()
 
     def bulk_insert_inventory(self, count):
+        warehouse_check_query = 'SELECT COUNT(*) FROM Warehouse;'
         c = self.conn.cursor()
-        c.execute('SELECT Warehouse_id FROM Warehouse')
-        warehouse_ids = [row[0] for row in c.fetchall()]
-        if not warehouse_ids:
+        c.execute(warehouse_check_query)
+        warehouse_count = c.fetchone()[0]
+        if warehouse_count == 0:
             print("Error: No warehouses exist. Please populate the Warehouse table first.")
             return
-        results = ['True', 'False', 'Unsuccessful', 'In process', 'Planned']
-        weights = [0.45, 0.45, 0.02, 0.03, 0.05]
-        for _ in range(count):
-            user_id = random.randint(1, 300)
-            result = random.choices(results, weights)[0]
-            warehouse_id = random.choice(warehouse_ids)
-            c.execute('INSERT INTO Inventory (User_id, Result, Warehouse_id) VALUES (%s, %s, %s)',
-                      (user_id, result, warehouse_id))
+
+        query = f'''
+            WITH WarehouseSample AS (
+                SELECT Warehouse_id
+                FROM Warehouse
+                ORDER BY RANDOM()
+                LIMIT {count}
+            ),
+            RandomData AS (
+                SELECT
+                    FLOOR(RANDOM() * 300 + 1)::INT AS User_id,
+                    CASE
+                        WHEN RANDOM() < 0.45 THEN 'True'
+                        WHEN RANDOM() < 0.90 THEN 'False'
+                        WHEN RANDOM() < 0.92 THEN 'Unsuccessful'
+                        WHEN RANDOM() < 0.95 THEN 'In process'
+                        ELSE 'Planned'
+                    END AS Result,
+                    ROW_NUMBER() OVER () AS RowNum
+                FROM GENERATE_SERIES(1, {count}) AS s
+            )
+            INSERT INTO Inventory (User_id, Result, Warehouse_id)
+            SELECT 
+                rd.User_id, 
+                rd.Result, 
+                ws.Warehouse_id
+            FROM RandomData rd
+            JOIN WarehouseSample ws
+            ON rd.RowNum = ws.Warehouse_id % {count} + 1;
+        '''
+        c.execute(query)
         self.conn.commit()
 
     def bulk_insert_product(self, count):
@@ -219,49 +243,44 @@ class Model:
             self.conn.rollback()
             print(f"Error while dropping tables: {e}")
 
-    def get_inventory_count_by_warehouse(self, result_filter):
+    def search_all_entities(self, where_filter=None, inventory_id_filter=None, user_id_filter=None,
+                            result_filter=None, warehouse_id_filter=None, product_id_filter=None,
+                            product_name_filter=None, min_quantity=None, max_quantity=None):
         query = '''
-            SELECT w."Where", COUNT(i.Inventory_id) AS inventory_count
-            FROM Warehouse w
-            JOIN Inventory i ON w.Warehouse_id = i.Warehouse_id
-            WHERE i.Result = %s
-            GROUP BY w."Where"
+            SELECT 
+                w."Where", 
+                w.Warehouse_id, 
+                i.Inventory_id, 
+                i.User_id, 
+                i.Result, 
+                p.Product_id, 
+                p.Product_Name, 
+                p.Quantity
+            FROM public.Warehouse w
+            JOIN public.Inventory i ON w.Warehouse_id = i.Warehouse_id
+            JOIN public.Warehouse_Products wp ON i.Inventory_id = wp.Inventory_id
+            JOIN public.Product p ON wp.Product_id = p.Product_id
+            WHERE
+                (%s IS NULL OR w."Where" ILIKE %s)
+                AND (%s IS NULL OR i.Inventory_id = %s)
+                AND (%s IS NULL OR i.User_id = %s)
+                AND (%s IS NULL OR i.Result ILIKE %s)
+                AND (%s IS NULL OR w.Warehouse_id = %s)
+                AND (%s IS NULL OR p.Product_id = %s)
+                AND (%s IS NULL OR p.Product_Name ILIKE %s)
+                AND (%s IS NULL OR p.Quantity >= %s)
+                AND (%s IS NULL OR p.Quantity <= %s);
         '''
         c = self.conn.cursor()
-        start_time = time.time()
-        c.execute(query, (result_filter,))
-        rows = c.fetchall()
-        execution_time = (time.time() - start_time) * 1000  # в миллисекундах
-        return rows, execution_time
-
-    def get_products_with_quantity(self, min_quantity):
-        query = '''
-            SELECT p.Product_Name, COUNT(wp.Inventory_id) AS linked_warehouses
-            FROM Product p
-            JOIN Warehouse_Products wp ON p.Product_id = wp.Product_id
-            WHERE p.Quantity > %s
-            GROUP BY p.Product_Name
-        '''
-        c = self.conn.cursor()
-        start_time = time.time()
-        c.execute(query, (min_quantity,))
-        rows = c.fetchall()
-        execution_time = (time.time() - start_time) * 1000
-        return rows, execution_time
-
-    def get_warehouse_with_most_inventories(self):
-        query = '''
-            SELECT w."Where", COUNT(i.Inventory_id) AS inventory_count
-            FROM Warehouse w
-            JOIN Inventory i ON w.Warehouse_id = i.Warehouse_id
-            GROUP BY w."Where"
-            ORDER BY inventory_count DESC
-            LIMIT 1
-        '''
-        c = self.conn.cursor()
-        start_time = time.time()
-        c.execute(query)
-        row = c.fetchone()
-        execution_time = (time.time() - start_time) * 1000
-        return row, execution_time
-
+        c.execute(query, (
+            where_filter, where_filter,
+            inventory_id_filter, inventory_id_filter,
+            user_id_filter, user_id_filter,
+            result_filter, result_filter,
+            warehouse_id_filter, warehouse_id_filter,
+            product_id_filter, product_id_filter,
+            product_name_filter, product_name_filter,
+            min_quantity, min_quantity,
+            max_quantity, max_quantity
+        ))
+        return c.fetchall()

@@ -1,3 +1,5 @@
+
+
 class View:
     def show_lines(self, lines, choice_table):
         print("Lines:")
@@ -74,12 +76,25 @@ class View:
         print(message)
 
     def show_search_results(self, lines, header):
-        print(header)
-        for line in lines:
-            if isinstance(line, tuple):
-                print(" | ".join(map(str, line)))
-            else:
-                print(line)
-        if not lines:
+        print(f"\n{header}")
+        if lines:
+            headers = [
+                "Where", "Warehouse ID", "Inventory ID",
+                "User ID", "Result", "Product ID",
+                "Product Name", "Quantity"
+            ]
+            column_widths = [max(len(str(row[i])) for row in lines) for i in range(len(headers))]
+            column_widths = [max(column_widths[i], len(headers[i])) for i in range(len(headers))]
+
+            header_row = " | ".join(f"{headers[i]:<{column_widths[i]}}" for i in range(len(headers)))
+            print("-" * len(header_row))
+            print(header_row)
+            print("-" * len(header_row))
+
+            for line in lines:
+                print(" | ".join(f"{str(line[i]):<{column_widths[i]}}" for i in range(len(line))))
+
+            print("-" * len(header_row))
+        else:
             print("No results found.")
 
